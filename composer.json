@@ -1,0 +1,23 @@
+{
+    "name": "fuyelk/install",
+    "description": "PHP项目更新安装工具",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Fuyelk",
+            "email": "fuyelk@fuyelk.com",
+			"homepage": "https://www.milinger.com"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {
+		"php" : ">=7.0",
+        "nelexa/zip": "^3.3"
+    },
+	"autoload":{
+		"psr-4":{
+			"fuyelk\\install\\":"src/"
+		}
+	}
+}
