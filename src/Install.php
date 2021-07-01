@@ -36,9 +36,9 @@ class Install
 
     /**
      * 设置数据包大小
-     * @param int $package_size
+     * @param int $package_size 单位：字节（Byte）
      */
-    public static function setPackageSize(int $package_size): void
+    public static function setPackageSize(int $package_size)
     {
         self::$package_size = $package_size;
     }
@@ -47,7 +47,7 @@ class Install
      * 设置数据包MD%
      * @param string $md5
      */
-    public static function setPackageMd5(string $md5): void
+    public static function setPackageMd5(string $md5)
     {
         self::$package_md5 = strtolower($md5);
     }
@@ -57,7 +57,7 @@ class Install
      * @param string $path
      * @throws \Exception
      */
-    public static function setRootPath(string $path): void
+    public static function setRootPath(string $path)
     {
         if (!is_dir($path)) {
             throw new \Exception('根目录不存在');
@@ -76,7 +76,7 @@ class Install
     public static function download(string $source)
     {
         // 创建临时文件
-        $tempFile = self::$ROOT_PATH . '/installtemp/temp' . time();
+        $tempFile = self::$ROOT_PATH . '/installtemp/temp_' . time();
         $tempFile = str_replace('//', '/', $tempFile);
         if (!is_dir(dirname($tempFile))) {
             mkdir(dirname($tempFile), 0755, true);

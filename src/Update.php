@@ -11,17 +11,17 @@ namespace fuyelk\install;
 
 class Update
 {
-    private static $key = 'VfaOXoPVlm2Le535ctBHRBZVLGS17ix0';
+    private $key = 'VfaOXoPVlm2Le535ctBHRBZVLGS17ix0';
 
     private $api = 'http://version.milinger.com/api/version/updateCheck';
 
-    private static $app_code = '';
+    private $app_code = '';
 
-    private static $current_version = '';
+    private $current_version = '';
 
-    private static $root_path = '';
+    private $root_path = '';
 
-    private static $config_path = '';
+    private $config_path = __DIR__ . '/conf';
 
     private $updateInfo = [];
 
@@ -35,31 +35,40 @@ class Update
      */
     public function __construct()
     {
-        self::$config_path = __DIR__ . '/config.php';
-        $this->getConfig();
+        $this->checkConfig();
     }
 
     /**
-     * @param string $root_path
-     */
-    public function setRootPath(string $root_path): void
-    {
-        self::$root_path = $root_path;
-    }
-
-    /**
-     * 读取配置
+     * 检查配置
      * @throws \Exception
      */
-    private function getConfig()
+    private function checkConfig()
     {
-        $config = require self::$config_path;
-        if (empty($config['app_code']) || empty($config['current_version'])) {
-            throw new \Exception('配置信息有误');
+        $config = Config::get($this->config_path);
+        if (empty($config)) {
+            $template = [
+                'app_code' => 'abcdabcd',
+                'current_version' => '1.0.0.1',
+                'root_path' => '$$:__DIR__'
+            ];
+            Config::set($template, $this->config_path);
+
+            throw new \Exception('请先配置APP编号和当前版本');
         }
 
-        self::$app_code = $config['app_code'];
-        self::$current_version = $config['current_version'];
+        if (empty($config['app_code'])) {
+            throw new \Exception('APP编号配置有误');
+        }
+        if (empty($config['current_version'])) {
+            throw new \Exception('APP版本号配置有误');
+        }
+        if (empty($config['root_path'])) {
+            throw new \Exception('根目录配置有误');
+        }
+
+        $this->app_code = $config['app_code'];
+        $this->current_version = $config['current_version'];
+        $this->root_path = $config['root_path'];
     }
 
     /**
@@ -72,24 +81,16 @@ class Update
             throw new \Exception('请先检查更新');
         }
 
-        self::$current_version = $this->updateInfo['new_version'];
+        $this->current_version = $this->updateInfo['new_version'];
         $config = [
-            'app_code' => self::$app_code,
-            'current_version' => self::$current_version,
+            'app_code' => $this->app_code,
+            'current_version' => $this->current_version,
+            'root_path' => $this->root_path,
+            'update_time' => date('Y-m-d H:i:s'),
             'update_info' => $this->updateInfo
         ];
-        $config = var_export($config, true);
-        $time = date('Y-m-d H:i:s');
-        $content = <<<EOF
-<?php
 
-// Update Time {$time}
-
-return {$config};
-EOF;
-        $fp = fopen(self::$config_path, 'w');
-        fwrite($fp, $content);
-        fclose($fp);
+        Config::set($config, $this->config_path);
     }
 
     /**
@@ -103,7 +104,7 @@ EOF;
     /**
      * @return array
      */
-    public function getUpdateInfo(): array
+    public function getUpdateInfo()
     {
         return $this->updateInfo;
     }
@@ -118,14 +119,14 @@ EOF;
      * @author fuyelk <fuyelk@fuyelk.com>
      * @date 2021/06/20 08:44
      */
-    public static function request($url, $method = 'GET', $data = [])
+    private function request($url, $method = 'GET', $data = [])
     {
         // 约定秘钥，建议每个项目独立设置
         $timestamp = time();
 
         $addHeader = [
             'REQT:' . $timestamp,
-            'SIGN:' . md5($url . http_build_query($data) . $timestamp . self::$key)
+            'SIGN:' . md5($url . http_build_query($data) . $timestamp . $this->key)
         ];
         $curl = curl_init();
         curl_setopt_array($curl, [
@@ -165,43 +166,35 @@ EOF;
      */
     public function updateCheck()
     {
-        if (empty(self::$app_code)) {
-            throw new \Exception('未设置APP编号');
-        }
-
-        if (empty(self::$current_version)) {
-            throw new \Exception('未设置当前版本');
-        }
-
         $data = [
-            'app_code' => self::$app_code,
-            'version' => self::$current_version
+            'app_code' => $this->app_code,
+            'version' => $this->current_version
         ];
 
         // 请求更新接口
-        $res = self::request($this->api, 'POST', $data);
-        if (empty($res)) {
+        $response = $this->request($this->api, 'POST', $data);
+        if (empty($response)) {
             $this->_error = '未查询到版本信息';
             return false;
         }
 
         // 校验更新接口信息
-        $json = json_decode($res, true);
-        if (empty($json) || !isset($json['code']) || !isset($json['msg'])) {
+        $res = json_decode($response, true);
+        if (empty($res) || !isset($res['code']) || !isset($res['msg'])) {
             throw new \Exception('未查询到版本信息');
         }
 
         // 接口状态不能为0
-        if (0 == $json['code'] || empty(json(['data'])) || !isset($json['data']['new_version_found'])) {
-            $this->_error = $json['msg'];
+        if (empty($res['code']) || empty($res['data']) || !isset($res['data']['new_version_found'])) {
+            $this->_error = $res['msg'];
             return false;
         }
 
-        $this->updateInfo = $json['data'];
-        $this->new_version_found = !empty($json['data']['new_version_found']);
+        $this->updateInfo = $res['data'];
+        $this->new_version_found = !empty($res['data']['new_version_found']);
 
         // 强制更新
-        if ($this->new_version_found && !empty($json['data']['enforce'])) {
+        if ($this->new_version_found && !empty($res['data']['enforce'])) {
             return $this->install(true);
         }
         return true;
@@ -233,18 +226,18 @@ EOF;
             return false;
         }
 
-        if (empty(self::$root_path)) {
+        if (empty($this->root_path)) {
             $this->_error = '请先设置根目录';
             return false;
         }
 
-        Install::setRootPath(self::$root_path);
+        Install::setRootPath($this->root_path);
 
-        if (isset($json['data']['package_size'])) {
+        if (isset($info['package_size'])) {
             Install::setPackageSize(intval($info['package_size']));
         }
 
-        if (isset($json['data']['md5'])) {
+        if (isset($info['md5'])) {
             Install::setPackageMd5($info['md5']);
         }
 

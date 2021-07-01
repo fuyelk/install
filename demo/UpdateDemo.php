@@ -1,6 +1,6 @@
 <?php
 // +---------------------------------------------------
-// | 版本更新程序
+// | 版本更新程序示例
 // +---------------------------------------------------
 // | @author fuyelk@fuyelk.com
 // +---------------------------------------------------
@@ -9,10 +9,17 @@
 
 use fuyelk\install\Update;
 
-$update = new Update();
-$update->setRootPath(__DIR__);
+require __DIR__ . '/../src/Update.php';
+require __DIR__ . '/../src/Config.php';
+require __DIR__ . '/../src/Install.php';
+
+if (is_file(__DIR__ . '/../vendor/autoload.php')) {
+    require __DIR__ . '/../vendor/autoload.php';
+}
+
 $result = false;
 try {
+    $update = new Update();
     $result = $update->updateCheck();
 } catch (\Exception $e) {
     var_dump($e->getMessage());
