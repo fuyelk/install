@@ -31,7 +31,7 @@ class Update
 
     /**
      * Update constructor.
-     * @param string $options 配置參數[配置文件目录：config_path,更新安装目录：install_path]
+     * @param string $options 配置參數[配置文件目录：config_path,更新安装目录：install_path,[APP编号：$app_code,当前版本：current_version]]
      * @throws \Exception
      */
     public function __construct(array $options)
@@ -48,6 +48,10 @@ class Update
 
         $this->install_path = $options['install_path'];
 
+        if (!empty($options['app_code']) && !empty($options['current_version'])) {
+            $this->app_code = $options['app_code'];
+            $this->current_version = $options['current_version'];
+        }
         $this->checkConfig();
     }
 
@@ -60,23 +64,36 @@ class Update
         $config = Config::get($this->config_path);
         if (empty($config)) {
             $template = [
-                'app_code' => 'DemoApp',
-                'current_version' => '0.0.0.1',
+                'app_code' => $this->app_code,
+                'current_version' => $this->current_version,
             ];
             Config::set($template, $this->config_path);
 
-            throw new \Exception('首次运行请修改[' . str_replace('\\', '/', $this->config_path) . ']配置文件');
+            if (empty($this->app_code)) {
+                throw new \Exception('首次运行请修改[' . str_replace('\\', '/', $this->config_path) . ']配置文件');
+            }
         }
 
-        if (empty($config['app_code'])) {
+        if (empty($this->app_code)) {
+            if (empty($config['app_code'])) {
+                throw new \Exception('APP编号配置有误');
+            }
+
+            if (empty($config['current_version'])) {
+                throw new \Exception('APP版本号配置有误');
+            }
+
+            $this->app_code = $config['app_code'];
+            $this->current_version = $config['current_version'];
+        }
+
+        if (empty($this->app_code)) {
             throw new \Exception('APP编号配置有误');
         }
-        if (empty($config['current_version'])) {
+
+        if (empty($this->current_version)) {
             throw new \Exception('APP版本号配置有误');
         }
-
-        $this->app_code = $config['app_code'];
-        $this->current_version = $config['current_version'];
     }
 
     /**
