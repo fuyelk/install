@@ -275,6 +275,10 @@ class Install
         // 删除临时目录
         self::removeDir($tempPack);
 
+        if (empty(self::showFilesPath($pathinfo['dirname']))) {
+            self::removeDir($pathinfo['dirname']);
+        }
+
         return true;
     }
 }
