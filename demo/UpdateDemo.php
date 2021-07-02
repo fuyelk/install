@@ -19,7 +19,11 @@ if (is_file(__DIR__ . '/../vendor/autoload.php')) {
 
 $result = false;
 try {
-    $update = new Update(__DIR__ . '/temp/config.php');
+    $opt = [
+        'config_path' => __DIR__ . '/temp/config.php',
+        'install_path' => __DIR__ . '/temp'
+    ];
+    $update = new Update($opt);
     $result = $update->updateCheck();
 } catch (\Exception $e) {
     var_dump($e->getMessage());

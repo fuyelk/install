@@ -31,28 +31,22 @@ class Update
 
     /**
      * Update constructor.
-     * @param string $config_path 配置文件路径
+     * @param string $options 配置參數[配置文件目录：config_path,更新安装目录：install_path]
      * @throws \Exception
      */
-    public function __construct(string $config_path)
+    public function __construct(array $options)
     {
-        $this->setConfigPath($config_path);
-    }
-
-    /**
-     * 设置配置文件路径
-     * @param string $path
-     * @throws \Exception
-     * @author fuyelk <fuyelk@fuyelk.com>
-     * @date 2021/07/02 16:48
-     */
-    private function setConfigPath(string $path)
-    {
-        if (!is_dir(dirname($path))) {
-            throw new \Exception('配置路径并不存在');
+        if (empty($options['config_path'])) {
+            throw new \Exception('未设置配置文件路径');
         }
 
-        $this->config_path = $path;
+        $this->config_path = $options['config_path'];
+
+        if (empty($options['install_path'])) {
+            throw new \Exception('未设置更新安装目录');
+        }
+
+        $this->install_path = $options['install_path'];
 
         $this->checkConfig();
     }
@@ -63,20 +57,15 @@ class Update
      */
     private function checkConfig()
     {
-        if (empty($this->config_path)) {
-            throw new \Exception('请先设置配置文件路径');
-        }
-
         $config = Config::get($this->config_path);
         if (empty($config)) {
             $template = [
-                'app_code' => 'abcdabcd',
+                'app_code' => 'DemoApp',
                 'current_version' => '0.0.0.1',
-                'install_path' => ''
             ];
             Config::set($template, $this->config_path);
 
-            throw new \Exception('请修改[' . str_replace('\\', '/', $this->config_path) . ']文件');
+            throw new \Exception('首次运行请修改[' . str_replace('\\', '/', $this->config_path) . ']配置文件');
         }
 
         if (empty($config['app_code'])) {
@@ -85,13 +74,9 @@ class Update
         if (empty($config['current_version'])) {
             throw new \Exception('APP版本号配置有误');
         }
-        if (empty($config['install_path'])) {
-            throw new \Exception('安装根目录配置有误');
-        }
 
         $this->app_code = $config['app_code'];
         $this->current_version = $config['current_version'];
-        $this->install_path = $config['install_path'];
     }
 
     /**
@@ -108,7 +93,6 @@ class Update
         $config = [
             'app_code' => $this->app_code,
             'current_version' => $this->current_version,
-            'install_path' => $this->install_path,
             'update_time' => date('Y-m-d H:i:s'),
             'update_info' => $this->updateInfo
         ];
@@ -246,11 +230,6 @@ class Update
 
         if (empty($info['download_url'])) {
             $this->_error = '没有找到下载地址';
-            return false;
-        }
-
-        if (empty($this->install_path)) {
-            $this->_error = '请先设置根目录';
             return false;
         }
 
