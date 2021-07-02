@@ -19,7 +19,7 @@ if (is_file(__DIR__ . '/../vendor/autoload.php')) {
 
 $result = false;
 try {
-    $update = new Update();
+    $update = new Update(__DIR__ . '/temp/config.php');
     $result = $update->updateCheck();
 } catch (\Exception $e) {
     var_dump($e->getMessage());
@@ -33,7 +33,7 @@ if ($result) {
         } catch (\Exception $e) {
             $this->error($e->getMessage());
         }
-        var_dump('更新成功');
+        var_dump(['msg' => '更新成功', 'info' => $update->getUpdateInfo()]);
         exit();
     }
     var_dump(['msg' => '当前已是最新版本', 'info' => $update->getUpdateInfo()]);
