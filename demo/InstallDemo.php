@@ -1,10 +1,10 @@
 <?php
 
-use fuyelk\install\Config;
 use fuyelk\install\Install;
+use fuyelk\install\InstallException;
 
 if (is_file(__DIR__ . '/../vendor/autoload.php')) {
-    require __DIR__ . '/../vendor/autoload.php';
+    require_once __DIR__ . '/../vendor/autoload.php';
 }
 
 try {
@@ -26,7 +26,7 @@ try {
     // 查看路径下文件
     Install::showFilesPath(__DIR__ . 'temp');
 
-} catch (\Exception $e) {
+} catch (InstallException $e) {
     echo $e->getMessage();
     exit();
 }

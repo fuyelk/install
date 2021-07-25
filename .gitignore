@@ -1,7 +1,5 @@
 /vendor/
 /composer.lock
-/src/config.json
-/src/conf
 .idea
 !.gitignore
 !.gitkeep

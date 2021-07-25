@@ -11,6 +11,8 @@
 
 namespace fuyelk\install;
 
+use fuyelk\db\Db;
+use fuyelk\db\DbException;
 use PhpZip\Exception\ZipException;
 use PhpZip\ZipFile;
 
@@ -35,6 +37,12 @@ class Install
     private static $package_md5 = '';
 
     /**
+     * 数据库配置
+     * @var bool
+     */
+    private static $dbConfig = false;
+
+    /**
      * 设置数据包大小
      * @param int $package_size 单位：字节（Byte）
      */
@@ -55,23 +63,32 @@ class Install
     /**
      * 设置根目录
      * @param string $path
-     * @throws \Exception
+     * @throws InstallException
      */
     public static function setRootPath(string $path)
     {
         if (!is_dir($path)) {
-            throw new \Exception('根目录不存在');
+            throw new InstallException('根目录不存在');
         }
         self::$ROOT_PATH = str_replace('\\', '/', $path);
+    }
+
+    /**
+     * 设置数据库配置
+     * @param string $config ['type','host','database','username','password','port','prefix']
+     */
+    public static function setDbConfig(array $config)
+    {
+        self::$dbConfig = true;
+        Db::setConfig($config);
     }
 
     /**
      * 下载文件
      * @param string $source
      * @return string
-     * @throws \Exception
+     * @throws InstallException
      * @author fuyelk <fuyelk@fuyelk.com>
-     * @date 2021/06/28 17:39
      */
     public static function download(string $source)
     {
@@ -95,22 +112,22 @@ class Install
             $error = curl_error($ch);
             fclose($fp);
             curl_close($ch);
-            throw new \Exception($error);
+            throw new InstallException($error);
         }
 
         $info = curl_getinfo($ch);
         curl_close($ch);
         fclose($fp);
         if (filesize($tempFile) != $info['size_download']) {
-            throw new \Exception('下载数据不完整，请重新下载');
+            throw new InstallException('下载数据不完整，请重新下载');
         }
 
         if (self::$package_size && self::$package_size != filesize($tempFile)) {
-            throw new \Exception('数据包大小与更新信息不一致');
+            throw new InstallException('数据包大小与更新信息不一致');
         }
 
         if (self::$package_md5 && self::$package_md5 != strtolower(md5_file($tempFile))) {
-            throw new \Exception('数据包MD5校验值与更新信息不一致');
+            throw new InstallException('数据包MD5校验值与更新信息不一致');
         }
 
         $content_type = explode('/', $info['content_type']);
@@ -125,9 +142,8 @@ class Install
      * @param string $dir 解压目录
      * @param bool $delPack 删除压缩包
      * @return array
-     * @throws \Exception
+     * @throws InstallException
      * @author fuyelk <fuyelk@fuyelk.com>
-     * @date 2021/06/28 21:14
      */
     public static function unpack(string $file, string $dir, $delPack = true)
     {
@@ -137,7 +153,10 @@ class Install
             $zip->openFile($file);
         } catch (ZipException $e) {
             $zip->close();
-            throw new \Exception('压缩打开失败：' . $e->getMessage());
+            if (is_file(unlink($file))) {
+                @unlink($file);
+            }
+            throw new InstallException('压缩包打开失败：' . $e->getMessage());
         }
 
         if (!is_dir($dir)) {
@@ -148,7 +167,10 @@ class Install
         try {
             $zip->extractTo($dir);
         } catch (ZipException $e) {
-            throw new \Exception('文件解压失败：' . $e->getMessage());
+            if (is_file(unlink($file))) {
+                @unlink($file);
+            }
+            throw new InstallException('文件解压失败：' . $e->getMessage());
         } finally {
             $zip->close();
         }
@@ -163,10 +185,9 @@ class Install
     /**
      * 递归获取指定路径下的所有文件路径
      * @param string $path 绝对路径
-     * @param int $removeBaseDirLen [移除初始路径长度]
+     * @param int $removeBaseDirLen [去除路径前缀长度：-1去掉所有前缀，0不去除]
      * @return array
      * @author fuyelk <fuyelk@fuyelk.com>
-     * @date 2021/06/28 19:51
      */
     public static function showFilesPath($path = '', $removeBaseDirLen = -1)
     {
@@ -196,14 +217,13 @@ class Install
      * 拷贝文件
      * @param $from
      * @param $to
-     * @throws \Exception
+     * @throws InstallException
      * @author fuyelk <fuyelk@fuyelk.com>
-     * @date 2021/06/28 21:10
      */
     public static function copy($from, $to)
     {
         if (!is_file($from)) {
-            throw new \Exception('文件[' . $from . ']不存在');
+            throw new InstallException('文件[' . $from . ']不存在');
         }
 
         if (!is_dir(dirname($to))) {
@@ -217,7 +237,6 @@ class Install
      * @param string $dir
      * @return bool
      * @author fuyelk <fuyelk@fuyelk.com>
-     * @date 2021/06/28 21:25
      */
     public static function removeDir($dir)
     {
@@ -245,9 +264,8 @@ class Install
     /**
      * 安装文件
      * @param string $url
-     * @throws \Exception
+     * @throws InstallException
      * @author fuyelk <fuyelk@fuyelk.com>
-     * @date 2021/06/28 18:11
      */
     public static function install(string $url, string $root_path = '')
     {
@@ -256,7 +274,7 @@ class Install
         }
 
         if (empty(self::$ROOT_PATH)) {
-            throw new \Exception('请先设置根目录');
+            throw new InstallException('请先设置根目录');
         }
 
         // 下载
@@ -267,9 +285,54 @@ class Install
         $tempPack = $pathinfo['dirname'] . '/' . $pathinfo['filename'];
         $files = self::unpack($tempFile, $tempPack);
 
+        $installSql = null;
+        $installPhp = null;
+
         // 安装
         foreach ($files as $file) {
+
+            if ('/install.php' == $file) {
+                $installPhp = $tempPack . '/' . $file;
+                continue;
+            }
+
+            if ('/install.sql' == $file) {
+                if (!self::$dbConfig) {
+                    self::removeDir($tempPack);
+                    throw new InstallException('请先配置数据库');
+                }
+                try {
+                    $prefix = Db::getConfig('prefix');
+                    $installSql = file_get_contents($tempPack . '/' . $file);
+                    $installSql = str_replace('`prefix_', '`' . ($prefix ?: ''), $installSql);
+                } catch (DbException $e) {
+                    self::removeDir($tempPack);
+                    throw new InstallException($e->getMessage());
+                }
+                continue;
+            }
+
             self::copy($tempPack . '/' . $file, self::$ROOT_PATH . $file);
+        }
+
+        // 执行Sql安装脚本
+        if ($installSql) {
+            try {
+                Db::query($installSql);
+            } catch (DbException $e) {
+                self::removeDir($tempPack);
+                throw new InstallException('执行Sql脚本出错：' . $e->getMessage());
+            }
+        }
+
+        // 执行PHP安装脚本
+        if ($installPhp) {
+            try {
+                include $installPhp;
+            } catch (\Exception $e) {
+                self::removeDir($tempPack);
+                throw new InstallException('执行PHP安装脚本出错：' . $e);
+            }
         }
 
         // 删除临时目录
