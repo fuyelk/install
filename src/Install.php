@@ -43,6 +43,18 @@ class Install
     private static $dbConfig = false;
 
     /**
+     * 排除文件扩展名
+     * @var array
+     */
+    private static $excludeExt = [];
+
+    /**
+     * 指定文件扩展名
+     * @var array
+     */
+    private static $includeExt = [];
+
+    /**
      * 设置数据包大小
      * @param int $package_size 单位：字节（Byte）
      */
@@ -81,6 +93,30 @@ class Install
     {
         self::$dbConfig = true;
         Db::setConfig($config);
+    }
+
+    /**
+     * 设置排除文件扩展名
+     * @param array $exclude
+     * @author fuyelk <fuyelk@fuyelk.com>
+     */
+    public static function setExcludeExt(array $exclude)
+    {
+        self::$excludeExt = array_map(function ($item) {
+            return strtolower($item);
+        }, $exclude);
+    }
+
+    /**
+     * 设置允许的文件扩展名
+     * @param array $include
+     * @author fuyelk <fuyelk@fuyelk.com>
+     */
+    public static function setIncludeExt(array $include)
+    {
+        self::$includeExt = array_map(function ($item) {
+            return strtolower($item);
+        }, $include);
     }
 
     /**
@@ -189,7 +225,7 @@ class Install
      * @return array
      * @author fuyelk <fuyelk@fuyelk.com>
      */
-    public static function showFilesPath($path = '', $removeBaseDirLen = -1)
+    public static function showFilesPath(string $path = '', int $removeBaseDirLen = -1)
     {
         $list = [];
         if (-1 == $removeBaseDirLen) {
@@ -215,12 +251,12 @@ class Install
 
     /**
      * 拷贝文件
-     * @param $from
-     * @param $to
+     * @param string $from
+     * @param string $to
      * @throws InstallException
      * @author fuyelk <fuyelk@fuyelk.com>
      */
-    public static function copy($from, $to)
+    public static function copy(string $from, string $to)
     {
         if (!is_file($from)) {
             throw new InstallException('文件[' . $from . ']不存在');
@@ -238,7 +274,7 @@ class Install
      * @return bool
      * @author fuyelk <fuyelk@fuyelk.com>
      */
-    public static function removeDir($dir)
+    public static function removeDir(string $dir)
     {
         $result = false;
         if (is_dir($dir)) {
@@ -291,11 +327,18 @@ class Install
         // 安装
         foreach ($files as $file) {
 
+            // 检查文件扩展名是否被允许
+            if (!self::checkExtension($file)) {
+                continue;
+            }
+
+            // 识别安装脚本
             if ('/install.php' == $file) {
                 $installPhp = $tempPack . '/' . $file;
                 continue;
             }
 
+            // 识别数据库脚本
             if ('/install.sql' == $file) {
                 if (!self::$dbConfig) {
                     self::removeDir($tempPack);
@@ -340,6 +383,26 @@ class Install
 
         if (empty(self::showFilesPath($pathinfo['dirname']))) {
             self::removeDir($pathinfo['dirname']);
+        }
+
+        return true;
+    }
+
+    /**
+     * 检查文件扩展名是否被允许
+     * @param string $file
+     * @return bool
+     * @author fuyelk <fuyelk@fuyelk.com>
+     */
+    private static function checkExtension(string $file)
+    {
+        $extension = strtolower(strrchr($file, '.'));
+        if (self::$excludeExt && in_array($extension, self::$excludeExt)) {
+            return false;
+        }
+
+        if (self::$includeExt && !in_array($extension, self::$excludeExt)) {
+            return false;
         }
 
         return true;
