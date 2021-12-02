@@ -263,11 +263,11 @@ class Install
 
     /**
      * 安装文件
-     * @param string $url
+     * @param string $file
      * @throws InstallException
      * @author fuyelk <fuyelk@fuyelk.com>
      */
-    public static function install(string $url, string $root_path = '')
+    public static function install(string $file, string $root_path = '')
     {
         if (!empty($root_path)) {
             self::setRootPath($root_path);
@@ -278,7 +278,7 @@ class Install
         }
 
         // 下载
-        $tempFile = self::download($url);
+        $tempFile = is_file($file) ? $file : self::download($file);
 
         // 解压
         $pathinfo = pathinfo($tempFile);
