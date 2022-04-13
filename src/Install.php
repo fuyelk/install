@@ -334,7 +334,23 @@ class Install
 
             // 识别安装脚本
             if ('/install.php' == $file) {
-                $installPhp = $tempPack . '/' . $file;
+                $installScripts = require $tempPack  . $file;
+                $scriptIndex = 0;
+                $changeIndex = 0;
+                foreach ($installScripts as $script) {
+                    foreach ($script['change'] as $item) {
+                        if (!in_array($item['type'] ?? '', ['before', 'after', 'replace', 'delete'])) {
+                            throw new InstallException('Error installing script: the script operation type is incorrect');
+                        }
+                        $func = $item['type'];
+                        $res = self::$func(self::$ROOT_PATH . $script['file'], $item['search'], $item['content']);
+                        if (false === $res) {
+                            throw new InstallException(sprintf('ERROR,install script index:%d,change index %d', $scriptIndex, $changeIndex));
+                        }
+                        $changeIndex++;
+                    }
+                    $scriptIndex++;
+                }
                 continue;
             }
 
@@ -355,6 +371,7 @@ class Install
                 continue;
             }
 
+            // 拷贝文件
             self::copy($tempPack . '/' . $file, self::$ROOT_PATH . $file);
         }
 
@@ -406,5 +423,111 @@ class Install
         }
 
         return true;
+    }
+
+    /**
+     * 替换换行标识
+     * @param string $content 原文本
+     * @param false $toLF [替换为LF]
+     * @return array|string|string[]|null
+     */
+    private static function replaceCRLF($content, $toLF = false)
+    {
+        if ($toLF) {
+            return preg_replace("/\r\n/", "\n", $content);
+        }
+        return preg_replace("/\n/", "\r\n", $content);
+    }
+
+    /**
+     * 前方插入
+     * @param string $file 文件绝对路径
+     * @param string $search 查找字符
+     * @param string $content 插入内容
+     * @return bool
+     */
+    private static function before($file, $search, $content)
+    {
+        if (!is_file($file)) return false;
+        $context = file_get_contents($file);
+
+        $before = strstr($context, $search, true);
+        if (false === $before) {
+            $new_search = self::replaceCRLF($search);
+            $before = strstr($context, $new_search, true);
+            if (false === $before) {
+                $new_search = self::replaceCRLF($search, true);
+                $before = strpos($context, $new_search);
+            }
+            $search = $new_search;
+        }
+
+        if (false === $before) return false;
+
+        $after = strstr($context, $search);
+        file_put_contents($file, $before . $content . $after);
+        return true;
+    }
+
+    /**
+     * 前方插入
+     * @param string $file 文件绝对路径
+     * @param string $search 查找字符
+     * @param string $content 插入内容
+     * @return bool
+     */
+    private static function after($file, $search, $content)
+    {
+        if (!is_file($file)) return false;
+        $context = file_get_contents($file);
+
+        $index = strpos($context, $search);
+        if (false === $index) {
+            $new_search = self::replaceCRLF($search);
+            $index = strpos($context, $new_search);
+            if (false === $index) {
+                $new_search = self::replaceCRLF($search, true);
+                $index = strpos($context, $new_search);
+            }
+            $search = $new_search;
+        }
+
+        if (false === $index) return false;
+
+        $before = substr($context, 0, $index + strlen($search));
+        $after = substr($context, $index + strlen($search));
+        file_put_contents($file, $before . $content . $after);
+        return true;
+    }
+
+    /**
+     * 文本替换
+     * @param string $file 文件绝对路径
+     * @param string $search 查找字符
+     * @param string $replace 替换内容
+     * @return bool
+     */
+    private static function replace($file, $search, $replace)
+    {
+        if (!is_file($file)) return false;
+        $context = file_get_contents($file);
+        $new_context = str_replace($search, $replace, $context);
+        file_put_contents($file, $new_context);
+        return true;
+    }
+
+    /**
+     * 删除文件
+     * @param string $file 文件绝对路径
+     * @return bool
+     */
+    private static function delete($file)
+    {
+        echo sprintf('%s is file',$file);
+
+        var_dump(is_file($file)) . PHP_EOL;
+
+        if (!is_file($file)) return false;
+        return unlink($file);
     }
 }

@@ -12,9 +12,11 @@
     ],
     "minimum-stability": "stable",
     "require": {
-		"php" : ">=7.0",
+		"php" : ">=7.1",
         "nelexa/zip": "^3.3",
-        "fuyelk/db": ">0.1.0"
+        "fuyelk/db": ">0.1.0",
+        "ext-curl": "*",
+        "ext-mbstring": "*"
     },
 	"autoload":{
 		"psr-4":{
