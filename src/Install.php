@@ -345,7 +345,11 @@ class Install
                         $func = $item['type'];
                         $res = self::$func(self::$ROOT_PATH . $script['file'], $item['search'], $item['content']);
                         if (false === $res) {
-                            throw new InstallException(sprintf('ERROR,install script index:%d,change index %d', $scriptIndex, $changeIndex));
+                            if (!empty($item['description'])) {
+                                throw new InstallException(sprintf('ERROR,install script error: %s', $item['description'] ?? ''));
+                            }else{
+                                throw new InstallException(sprintf('ERROR,install script error: script index:%d,change index %d', $scriptIndex, $changeIndex));
+                            }
                         }
                         $changeIndex++;
                     }
@@ -523,7 +527,7 @@ class Install
      */
     private static function delete($file)
     {
-        echo sprintf('%s is file',$file);
+        echo sprintf('%s is file', $file);
 
         var_dump(is_file($file)) . PHP_EOL;
 
