@@ -9,7 +9,7 @@
 
 namespace fuyelk\install;
 
-use function Swoole\Coroutine\deadlock_check;
+require_once 'InstallException.php';
 
 function dump($content = '', $new_line = true)
 {
@@ -29,8 +29,7 @@ class Finstall
     /**
      * @var string HOST
      */
-//    private static $HOST = 'http://version.milinger.com';
-    private static $HOST = 'http://version.localhost.com';
+    private static $HOST = 'http://version.milinger.com';
 
     /**
      * 打印欢迎词
@@ -119,7 +118,7 @@ class Finstall
         $responseArr = json_decode($response, true);
 
         if (false == $responseArr || !isset($responseArr['code'])) {
-            throw new InstallException('不支持的数据结构');
+            throw new InstallException('不支持的数据结构:' . $response);
         }
 
         if ($checkLogin) {
@@ -185,7 +184,6 @@ class Finstall
             dump('输入有误，请重新输入');
             dump('请选择：', false);
             $select = trim(fgets(STDIN));
-            exit();
         }
 
         // 检查安装目录
