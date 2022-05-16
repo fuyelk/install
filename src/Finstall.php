@@ -205,6 +205,7 @@ class Finstall
                 echo $db_conf . ':';
                 $database[$db_conf] = trim(fgets(STDIN));
             }
+            Install::setDbConfig($database);
         }
 
         // 执行安装
