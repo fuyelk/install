@@ -334,22 +334,23 @@ class Install
 
             // 识别安装脚本
             if ('/install.php' == $file) {
-                $installScripts = require $tempPack  . $file;
+                $installScripts = require $tempPack . $file;
                 $scriptIndex = 0;
                 $changeIndex = 0;
                 foreach ($installScripts as $script) {
                     foreach ($script['change'] as $item) {
                         if (!in_array($item['type'] ?? '', ['before', 'after', 'replace', 'delete'])) {
+                            self::removeDir($tempPack);
                             throw new InstallException('Error installing script: the script operation type is incorrect');
                         }
                         $func = $item['type'];
                         $res = self::$func(self::$ROOT_PATH . $script['file'], $item['search'], $item['content']);
                         if (false === $res) {
+                            self::removeDir($tempPack);
                             if (!empty($item['description'])) {
                                 throw new InstallException(sprintf('ERROR,install script error: %s', $item['description'] ?? ''));
-                            }else{
-                                throw new InstallException(sprintf('ERROR,install script error: script index:%d,change index %d', $scriptIndex, $changeIndex));
                             }
+                            throw new InstallException(sprintf('ERROR,install script error: script index:%d,change index %d', $scriptIndex, $changeIndex));
                         }
                         $changeIndex++;
                     }
