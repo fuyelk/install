@@ -374,12 +374,15 @@ class Install
         }
 
         // 执行Sql安装脚本
+        Db::startTrans();
         if ($installSql) {
             try {
                 Db::query($installSql);
+                Db::commit();
             } catch (Exception $e) {
+                Db::rollback();
                 self::removeDir($tempPack);
-                throw new InstallException('执行Sql脚本出错：' . $e->getMessage());
+                self::throwAndRollback('执行Sql脚本出错：' . $e->getMessage());
             }
         }
 
