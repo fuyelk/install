@@ -19,8 +19,6 @@ function dump($content = '', $new_line = true)
 
 class Finstall
 {
-    private $_error = null;
-
     /**
      * Cookie文件
      */
@@ -82,7 +80,7 @@ class Finstall
      * @return array|bool|string
      * @throws InstallException
      */
-    public function apiRequest($api, $method = 'GET', $data = [], $checkLogin = true)
+    public function apiRequest(string $api, string $method = 'GET', array $data = [], bool $checkLogin = true)
     {
         $ch = curl_init();
         curl_setopt_array($ch, [
@@ -104,7 +102,7 @@ class Finstall
         // 发送请求数据
         if ($data) {
             $data = json_encode($data, JSON_UNESCAPED_UNICODE);
-            array_push($addHeader, 'Content-type:application/json');
+            $addHeader[] = 'Content-type:application/json';
             curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
         }
         curl_setopt($ch, CURLOPT_HTTPHEADER, $addHeader); // 设置请求头
@@ -117,7 +115,7 @@ class Finstall
         // 解析接口数据
         $responseArr = json_decode($response, true);
 
-        if (false == $responseArr || !isset($responseArr['code'])) {
+        if (!$responseArr || !isset($responseArr['code'])) {
             throw new InstallException('不支持的数据结构:' . $response);
         }
 
@@ -142,7 +140,7 @@ class Finstall
 
     /**
      * 代码库列表
-     * @return array|bool|string
+     * @return void
      */
     private function libraryList()
     {
@@ -155,10 +153,6 @@ class Finstall
             exit();
         }
 
-        if (false == $libraries) {
-            dump($libraries->getError());
-            exit();
-        }
         $i = 1;
 
         dump("+==================================+");
@@ -224,7 +218,7 @@ class Finstall
      * 登录
      * @return bool
      */
-    public function login()
+    public function login(): bool
     {
         $api = self::$HOST . '/api/Finstall/login';
 
@@ -245,16 +239,16 @@ class Finstall
             self::apiRequest($api, 'POST', $data, false);
         } catch (InstallException $e) {
             dump($e->getMessage());
-            exit();
+            return false;
         }
 
         dump('登录成功');
-        exit();
+        return true;
     }
 
     /**
      * 退出登录
-     * @return bool
+     * @return void
      */
     public function logout()
     {
@@ -272,16 +266,6 @@ class Finstall
 
         dump('退出成功');
         exit();
-    }
-
-    /**
-     * @return string|null
-     * @author fuyelk <fuyelk@fuyelk.com>
-     * @date 2022/4/15 14:27
-     */
-    public function getError()
-    {
-        return $this->_error;
     }
 }
 

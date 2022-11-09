@@ -4,13 +4,14 @@
 // +---------------------------------------------------
 // | @author fuyelk@fuyelk.com
 // +---------------------------------------------------
-// | @date 2021/06/28 21:30
+// | @date 2022/11/9 15:46
 // +---------------------------------------------------
 // | 项目依赖：nelexa/zip : composer require nelexa/zip
 // +---------------------------------------------------
 
 namespace fuyelk\install;
 
+use Exception;
 use fuyelk\db\Db;
 use fuyelk\db\DbException;
 use PhpZip\Exception\ZipException;
@@ -55,6 +56,15 @@ class Install
     private static $includeExt = [];
 
     /**
+     * @var array[] 事务列表
+     */
+    private static $transList = [
+        'new_file' => [],      // 新创建的文件
+        'backup_file' => [],   // 备份的文件
+        'backup_dir' => [],    // 备份的目录
+    ];
+
+    /**
      * 设置数据包大小
      * @param int $package_size 单位：字节（Byte）
      */
@@ -87,7 +97,7 @@ class Install
 
     /**
      * 设置数据库配置
-     * @param string $config ['type','host','database','username','password','port','prefix']
+     * @param array $config ['type','host','database','username','password','port','prefix']
      */
     public static function setDbConfig(array $config)
     {
@@ -126,7 +136,7 @@ class Install
      * @throws InstallException
      * @author fuyelk <fuyelk@fuyelk.com>
      */
-    public static function download(string $source)
+    public static function download(string $source): string
     {
         // 创建临时文件
         $tempFile = self::$ROOT_PATH . '/installtemp/temp_' . time();
@@ -181,7 +191,7 @@ class Install
      * @throws InstallException
      * @author fuyelk <fuyelk@fuyelk.com>
      */
-    public static function unpack(string $file, string $dir, $delPack = true)
+    public static function unpack(string $file, string $dir, bool $delPack = true): array
     {
         // 打开压缩包
         $zip = new ZipFile();
@@ -225,7 +235,7 @@ class Install
      * @return array
      * @author fuyelk <fuyelk@fuyelk.com>
      */
-    public static function showFilesPath(string $path = '', int $removeBaseDirLen = -1)
+    public static function showFilesPath(string $path = '', int $removeBaseDirLen = -1): array
     {
         $list = [];
         if (-1 == $removeBaseDirLen) {
@@ -250,31 +260,12 @@ class Install
     }
 
     /**
-     * 拷贝文件
-     * @param string $from
-     * @param string $to
-     * @throws InstallException
-     * @author fuyelk <fuyelk@fuyelk.com>
-     */
-    public static function copy(string $from, string $to)
-    {
-        if (!is_file($from)) {
-            throw new InstallException('文件[' . $from . ']不存在');
-        }
-
-        if (!is_dir(dirname($to))) {
-            mkdir(dirname($to), 0755, true);
-        }
-        copy($from, $to);
-    }
-
-    /**
      * 递归删除目录和文件
      * @param string $dir
      * @return bool
      * @author fuyelk <fuyelk@fuyelk.com>
      */
-    public static function removeDir(string $dir)
+    public static function removeDir(string $dir): bool
     {
         $result = false;
         if (is_dir($dir)) {
@@ -300,10 +291,12 @@ class Install
     /**
      * 安装文件
      * @param string $file
+     * @param string $root_path
+     * @return bool
      * @throws InstallException
      * @author fuyelk <fuyelk@fuyelk.com>
      */
-    public static function install(string $file, string $root_path = '')
+    public static function install(string $file, string $root_path = ''): bool
     {
         if (!empty($root_path)) {
             self::setRootPath($root_path);
@@ -341,16 +334,16 @@ class Install
                     foreach ($script['change'] as $item) {
                         if (!in_array($item['type'] ?? '', ['before', 'after', 'replace', 'delete'])) {
                             self::removeDir($tempPack);
-                            throw new InstallException('Error installing script: the script operation type is incorrect');
+                            self::throwAndRollback('Error installing script: the script operation type is incorrect');
                         }
                         $func = $item['type'];
                         $res = self::$func(self::$ROOT_PATH . $script['file'], $item['search'], $item['content']);
                         if (false === $res) {
                             self::removeDir($tempPack);
                             if (!empty($item['description'])) {
-                                throw new InstallException(sprintf('ERROR,install script error: %s', $item['description'] ?? ''));
+                                self::throwAndRollback(sprintf('ERROR,install script error: %s', $item['description']));
                             }
-                            throw new InstallException(sprintf('ERROR,install script error: script index:%d,change index %d', $scriptIndex, $changeIndex));
+                            self::throwAndRollback(sprintf('ERROR,install script error: script index:%d,change index %d', $scriptIndex, $changeIndex));
                         }
                         $changeIndex++;
                     }
@@ -363,7 +356,7 @@ class Install
             if ('/install.sql' == $file) {
                 if (!self::$dbConfig) {
                     self::removeDir($tempPack);
-                    throw new InstallException('请先配置数据库');
+                    self::throwAndRollback('请先配置数据库');
                 }
                 try {
                     $prefix = Db::getConfig('prefix');
@@ -371,20 +364,20 @@ class Install
                     $installSql = str_replace('`prefix_', '`' . ($prefix ?: ''), $installSql);
                 } catch (DbException $e) {
                     self::removeDir($tempPack);
-                    throw new InstallException($e->getMessage());
+                    self::throwAndRollback($e->getMessage());
                 }
                 continue;
             }
 
             // 拷贝文件
-            self::copy($tempPack . '/' . $file, self::$ROOT_PATH . $file);
+            self::newFile($tempPack . '/' . $file, self::$ROOT_PATH . $file);
         }
 
         // 执行Sql安装脚本
         if ($installSql) {
             try {
                 Db::query($installSql);
-            } catch (DbException $e) {
+            } catch (Exception $e) {
                 self::removeDir($tempPack);
                 throw new InstallException('执行Sql脚本出错：' . $e->getMessage());
             }
@@ -394,7 +387,7 @@ class Install
         if ($installPhp) {
             try {
                 include $installPhp;
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 self::removeDir($tempPack);
                 throw new InstallException('执行PHP安装脚本出错：' . $e);
             }
@@ -416,7 +409,7 @@ class Install
      * @return bool
      * @author fuyelk <fuyelk@fuyelk.com>
      */
-    private static function checkExtension(string $file)
+    private static function checkExtension(string $file): bool
     {
         $extension = strtolower(strrchr($file, '.'));
         if (self::$excludeExt && in_array($extension, self::$excludeExt)) {
@@ -436,12 +429,33 @@ class Install
      * @param false $toLF [替换为LF]
      * @return array|string|string[]|null
      */
-    private static function replaceCRLF($content, $toLF = false)
+    private static function replaceCRLF(string $content, bool $toLF = false)
     {
         if ($toLF) {
             return preg_replace("/\r\n/", "\n", $content);
         }
         return preg_replace("/\n/", "\r\n", $content);
+    }
+
+    /**
+     * 拷贝文件
+     * @param string $from
+     * @param string $to
+     * @throws InstallException
+     * @author fuyelk <fuyelk@fuyelk.com>
+     */
+    public static function newFile(string $from, string $to)
+    {
+        if (!is_file($from)) {
+            self::throwAndRollback('文件[' . $from . ']不存在');
+        }
+
+        if (!is_dir(dirname($to))) {
+            mkdir(dirname($to), 0755, true);
+        }
+        copy($from, $to);
+
+        self::addToTransList($to, 'new_file');
     }
 
     /**
@@ -451,9 +465,10 @@ class Install
      * @param string $content 插入内容
      * @return bool
      */
-    private static function before($file, $search, $content)
+    private static function before(string $file, string $search, string $content): bool
     {
         if (!is_file($file)) return false;
+        self::addToTransList($file, 'backup_file');
         $context = file_get_contents($file);
 
         $before = strstr($context, $search, true);
@@ -481,9 +496,10 @@ class Install
      * @param string $content 插入内容
      * @return bool
      */
-    private static function after($file, $search, $content)
+    private static function after(string $file, string $search, string $content): bool
     {
         if (!is_file($file)) return false;
+        self::addToTransList($file, 'backup_file');
         $context = file_get_contents($file);
 
         $index = strpos($context, $search);
@@ -512,9 +528,10 @@ class Install
      * @param string $replace 替换内容
      * @return bool
      */
-    private static function replace($file, $search, $replace)
+    private static function replace(string $file, string $search, string $replace): bool
     {
         if (!is_file($file)) return false;
+        self::addToTransList($file, 'backup_file');
         $context = file_get_contents($file);
         $new_context = str_replace($search, $replace, $context);
         file_put_contents($file, $new_context);
@@ -526,13 +543,90 @@ class Install
      * @param string $file 文件绝对路径
      * @return bool
      */
-    private static function delete($file)
+    private static function delete(string $file): bool
     {
-        echo sprintf('%s is file', $file);
+        if (is_dir($file)) {
+            self::addToTransList($file, 'backup_dir');
+            return self::removeDir($file);
+        }
 
-        var_dump(is_file($file)) . PHP_EOL;
-
-        if (!is_file($file)) return false;
+        if (!is_file($file)) {
+            return true;
+        }
+        self::addToTransList($file, 'backup_file');
         return unlink($file);
+    }
+
+    /**
+     * 将变更添加到事务列表
+     * @param string $file
+     * @param string $event ['new_file','backup_file','backup_dir']
+     * @return void
+     * @author fuyelk <fuyelk@fuyelk.com>
+     */
+    private static function addToTransList(string $file, string $event)
+    {
+        // 记录事务
+        if (!in_array($event, self::$transList[$event])) {
+            // 备份文件
+            if ('backup_file' == $event) {
+                copy($file, $file . '_install_');
+            }
+
+            // 备份目录
+            if ('backup_dir' == $event) {
+                rename($file, $file . '_install_');
+            }
+            self::$transList[$event][] = $file;
+        }
+    }
+
+    /**
+     * 回滚变更的内容
+     * @return void
+     * @author fuyelk <fuyelk@fuyelk.com>
+     */
+    private static function rollback()
+    {
+        foreach (self::$transList['new_file'] as $file) {
+            // 删除新增的文件
+            @unlink($file);
+        }
+        unset($file);
+
+        foreach (self::$transList['backup_file'] as $file) {
+            // 删除修改的文件
+            if (is_file($file)) {
+                @unlink($file);
+            }
+            // 还原备份的文件名
+            rename($file, mb_substr($file, 9));
+        }
+        unset($file);
+
+        foreach (self::$transList['backup_dir'] as $file) {
+            // 还原备份的目录
+            rename($file, mb_substr($file, 9));
+        }
+
+        // 清空事务
+        self::$transList = [
+            'new_file' => [],
+            'backup_file' => [],
+            'backup_dir' => [],
+        ];
+    }
+
+    /**
+     * 回滚变更，并抛出异常
+     * @param string $message
+     * @return mixed
+     * @throws InstallException
+     * @author fuyelk <fuyelk@fuyelk.com>
+     */
+    private static function throwAndRollback(string $message)
+    {
+        self::rollback();
+        throw new InstallException($message);
     }
 }

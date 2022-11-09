@@ -16,7 +16,8 @@
         "nelexa/zip": "^3.3",
         "fuyelk/db": ">0.1.0",
         "ext-curl": "*",
-        "ext-mbstring": "*"
+        "ext-mbstring": "*",
+        "ext-json": "*"
     },
 	"autoload":{
 		"psr-4":{
