@@ -4,7 +4,7 @@
 // +---------------------------------------------------
 // | @author fuyelk@fuyelk.com
 // +---------------------------------------------------
-// | @date 2022/11/9 15:46
+// | @date 2022/11/10 16:09
 // +---------------------------------------------------
 // | 项目依赖：nelexa/zip : composer require nelexa/zip
 // +---------------------------------------------------
@@ -13,7 +13,6 @@ namespace fuyelk\install;
 
 use Exception;
 use fuyelk\db\Db;
-use fuyelk\db\DbException;
 use PhpZip\Exception\ZipException;
 use PhpZip\ZipFile;
 
@@ -29,13 +28,18 @@ class Install
      * 数据包大小
      * @var int
      */
-    private static $package_size = 0;
+    private static $packageSize = 0;
 
     /**
      * 数据包MD5
      * @var string
      */
-    private static $package_md5 = '';
+    private static $packageMD5 = '';
+
+    /**
+     * @var string 数据包解压临时目录
+     */
+    private static $tempPackageDir = '';
 
     /**
      * 数据库配置
@@ -70,7 +74,7 @@ class Install
      */
     public static function setPackageSize(int $package_size)
     {
-        self::$package_size = $package_size;
+        self::$packageSize = $package_size;
     }
 
     /**
@@ -79,7 +83,7 @@ class Install
      */
     public static function setPackageMd5(string $md5)
     {
-        self::$package_md5 = strtolower($md5);
+        self::$packageMD5 = strtolower($md5);
     }
 
     /**
@@ -168,11 +172,11 @@ class Install
             throw new InstallException('下载数据不完整，请重新下载');
         }
 
-        if (self::$package_size && self::$package_size != filesize($tempFile)) {
+        if (self::$packageSize && self::$packageSize != filesize($tempFile)) {
             throw new InstallException('数据包大小与更新信息不一致');
         }
 
-        if (self::$package_md5 && self::$package_md5 != strtolower(md5_file($tempFile))) {
+        if (self::$packageMD5 && self::$packageMD5 != strtolower(md5_file($tempFile))) {
             throw new InstallException('数据包MD5校验值与更新信息不一致');
         }
 
@@ -290,13 +294,13 @@ class Install
 
     /**
      * 安装文件
-     * @param string $file
+     * @param string $package
      * @param string $root_path
      * @return bool
      * @throws InstallException
      * @author fuyelk <fuyelk@fuyelk.com>
      */
-    public static function install(string $file, string $root_path = ''): bool
+    public static function install(string $package, string $root_path = ''): bool
     {
         if (!empty($root_path)) {
             self::setRootPath($root_path);
@@ -307,102 +311,71 @@ class Install
         }
 
         // 下载
-        $tempFile = is_file($file) ? $file : self::download($file);
+        $tempFile = is_file($package) ? $package : self::download($package);
 
-        // 解压
-        $pathinfo = pathinfo($tempFile);
-        $tempPack = $pathinfo['dirname'] . '/' . $pathinfo['filename'];
-        $files = self::unpack($tempFile, $tempPack);
+        // 设临时目录为文件名去掉后缀
+        $ext = pathinfo($tempFile, PATHINFO_EXTENSION);
+        self::$tempPackageDir = mb_substr($tempFile, 0, -1 - strlen($ext));
+        $files = self::unpack($tempFile, self::$tempPackageDir);
 
-        $installSql = null;
-        $installPhp = null;
+        // 最先执行安装脚本
+        if (in_array('/install.php', $files)) {
+            $installScripts = require self::$tempPackageDir . '/install.php';
+            $scriptIndex = 0;
+            $changeIndex = 0;
+            foreach ($installScripts as $script) {
+                foreach ($script['change'] as $item) {
+                    if (!in_array($item['type'] ?? '', ['before', 'after', 'replace', 'delete'])) {
+                        self::throwAndRollback('Error installing script: the script operation type is incorrect');
+                    }
+                    $func = $item['type'];
+                    $res = self::$func(self::$ROOT_PATH . $script['file'], $item['search'], $item['content']);
+                    if (false === $res) {
+                        if (!empty($item['description'])) {
+                            self::throwAndRollback(sprintf('ERROR,install script error: %s', $item['description']));
+                        }
+                        self::throwAndRollback(sprintf('ERROR,install script error: script index:%d,change index %d', $scriptIndex, $changeIndex));
+                    }
+                    $changeIndex++;
+                }
+                $scriptIndex++;
+            }
+            unset($scriptIndex, $changeIndex);
+        }
 
         // 安装
         foreach ($files as $file) {
 
             // 检查文件扩展名是否被允许
-            if (!self::checkExtension($file)) {
-                continue;
-            }
+            if (!self::checkExtension($file)) continue;
 
-            // 识别安装脚本
-            if ('/install.php' == $file) {
-                $installScripts = require $tempPack . $file;
-                $scriptIndex = 0;
-                $changeIndex = 0;
-                foreach ($installScripts as $script) {
-                    foreach ($script['change'] as $item) {
-                        if (!in_array($item['type'] ?? '', ['before', 'after', 'replace', 'delete'])) {
-                            self::removeDir($tempPack);
-                            self::throwAndRollback('Error installing script: the script operation type is incorrect');
-                        }
-                        $func = $item['type'];
-                        $res = self::$func(self::$ROOT_PATH . $script['file'], $item['search'], $item['content']);
-                        if (false === $res) {
-                            self::removeDir($tempPack);
-                            if (!empty($item['description'])) {
-                                self::throwAndRollback(sprintf('ERROR,install script error: %s', $item['description']));
-                            }
-                            self::throwAndRollback(sprintf('ERROR,install script error: script index:%d,change index %d', $scriptIndex, $changeIndex));
-                        }
-                        $changeIndex++;
-                    }
-                    $scriptIndex++;
-                }
-                continue;
-            }
-
-            // 识别数据库脚本
-            if ('/install.sql' == $file) {
-                if (!self::$dbConfig) {
-                    self::removeDir($tempPack);
-                    self::throwAndRollback('请先配置数据库');
-                }
-                try {
-                    $prefix = Db::getConfig('prefix');
-                    $installSql = file_get_contents($tempPack . '/' . $file);
-                    $installSql = str_replace('`prefix_', '`' . ($prefix ?: ''), $installSql);
-                } catch (DbException $e) {
-                    self::removeDir($tempPack);
-                    self::throwAndRollback($e->getMessage());
-                }
-                continue;
-            }
+            // 跳过安装脚本及据库脚本
+            if ('/install.php' == $file || '/install.sql' == $file) continue;
 
             // 拷贝文件
-            self::newFile($tempPack . '/' . $file, self::$ROOT_PATH . $file);
+            self::newFile(self::$tempPackageDir . '/' . $file, self::$ROOT_PATH . $file);
         }
 
-        // 执行Sql安装脚本
-        Db::startTrans();
-        if ($installSql) {
+        // 最后执行SQL脚本
+        if (in_array('/install.sql', $files)) {
+            if (!self::$dbConfig) {
+                self::throwAndRollback('请先配置数据库');
+            }
+            Db::startTrans();
             try {
+                $prefix = Db::getConfig('prefix');
+                $installSql = file_get_contents(self::$tempPackageDir . '/install.sql');
+                $installSql = str_replace('`prefix_', '`' . ($prefix ?: ''), $installSql);
                 Db::query($installSql);
                 Db::commit();
             } catch (Exception $e) {
                 Db::rollback();
-                self::removeDir($tempPack);
                 self::throwAndRollback('执行Sql脚本出错：' . $e->getMessage());
             }
         }
 
-        // 执行PHP安装脚本
-        if ($installPhp) {
-            try {
-                include $installPhp;
-            } catch (Exception $e) {
-                self::removeDir($tempPack);
-                throw new InstallException('执行PHP安装脚本出错：' . $e);
-            }
-        }
-
         // 删除临时目录
-        self::removeDir($tempPack);
-
-        if (empty(self::showFilesPath($pathinfo['dirname']))) {
-            self::removeDir($pathinfo['dirname']);
-        }
-
+        self::removeDir(self::$tempPackageDir);
         return true;
     }
 
@@ -629,6 +602,10 @@ class Install
      */
     private static function throwAndRollback(string $message)
     {
+        // 删除数据包临时目录
+        if (is_dir(self::$tempPackageDir)) {
+            self::removeDir(self::$tempPackageDir);
+        }
         self::rollback();
         throw new InstallException($message);
     }
