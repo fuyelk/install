@@ -272,21 +272,20 @@ class Install
     public static function removeDir(string $dir): bool
     {
         $result = false;
-        if (is_dir($dir)) {
-            if ($handle = opendir($dir)) {
-                while ($item = readdir($handle)) {
-                    if ($item != '.' && $item != '..') {
-                        if (is_dir($dir . '/' . $item)) {
-                            self::removeDir($dir . '/' . $item);
-                        } else {
-                            unlink($dir . '/' . $item);
-                        }
+        if (!is_dir($dir)) return true;
+        if ($handle = opendir($dir)) {
+            while ($item = readdir($handle)) {
+                if ($item != '.' && $item != '..') {
+                    if (is_dir($dir . '/' . $item)) {
+                        self::removeDir($dir . '/' . $item);
+                    } else {
+                        unlink($dir . '/' . $item);
                     }
                 }
-                closedir($handle);
-                if (rmdir($dir)) {
-                    $result = true;
-                }
+            }
+            closedir($handle);
+            if (rmdir($dir)) {
+                $result = true;
             }
         }
         return $result;
@@ -329,7 +328,7 @@ class Install
                         self::throwAndRollback('Error installing script: the script operation type is incorrect');
                     }
                     $func = $item['type'];
-                    $res = self::$func(self::$ROOT_PATH . $script['file'], $item['search'], $item['content']);
+                    $res = self::$func(self::$ROOT_PATH . $script['file'], $item['search'] ?? '', $item['content'] ?? '');
                     if (false === $res) {
                         if (!empty($item['description'])) {
                             self::throwAndRollback(sprintf('ERROR,install script error: %s', $item['description']));
@@ -376,6 +375,9 @@ class Install
 
         // 删除临时目录
         self::removeDir(self::$tempPackageDir);
+
+        // 清除事务记录
+        self::clearTrans();
         return true;
     }
 
@@ -543,7 +545,7 @@ class Install
     private static function addToTransList(string $file, string $event)
     {
         // 记录事务
-        if (!in_array($event, self::$transList[$event])) {
+        if (!in_array($file, self::$transList[$event])) {
             // 备份文件
             if ('backup_file' == $event) {
                 copy($file, $file . '_install_');
@@ -551,6 +553,9 @@ class Install
 
             // 备份目录
             if ('backup_dir' == $event) {
+                if (is_dir($file . '_install_')) {
+                    self::removeDir($file . '_install_');
+                }
                 rename($file, $file . '_install_');
             }
             self::$transList[$event][] = $file;
@@ -575,14 +580,44 @@ class Install
             if (is_file($file)) {
                 @unlink($file);
             }
-            // 还原备份的文件名
-            rename($file, mb_substr($file, 9));
+            // 还原备份的文件
+            is_file($file . '_install_') and rename($file . '_install_', $file);
         }
         unset($file);
 
-        foreach (self::$transList['backup_dir'] as $file) {
+        foreach (self::$transList['backup_dir'] as $dir) {
             // 还原备份的目录
-            rename($file, mb_substr($file, 9));
+            is_dir($dir . '_install_') and rename($dir . '_install_', $dir);
+        }
+
+        // 清空事务
+        self::$transList = [
+            'new_file' => [],
+            'backup_file' => [],
+            'backup_dir' => [],
+        ];
+    }
+
+    /**
+     * 清除事务记录
+     * @return void
+     * @author fuyelk <fuyelk@fuyelk.com>
+     */
+    private static function clearTrans()
+    {
+        // 删除备份文件
+        foreach (self::$transList['backup_file'] as $file) {
+            if (is_file($file . '_install_')) {
+                @unlink($file . '_install_');
+            }
+        }
+        unset($file);
+
+        // 删除备份目录
+        foreach (self::$transList['backup_dir'] as $dir) {
+            if (is_dir($dir . '_install_')) {
+                self::removeDir($dir . '_install_');
+            }
         }
 
         // 清空事务
