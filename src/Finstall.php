@@ -87,7 +87,6 @@ class Finstall
             CURLOPT_ACCEPT_ENCODING => 'gzip,deflate',
             CURLOPT_URL => $api,
             CURLOPT_CUSTOMREQUEST => strtoupper($method), // 请求方式
-            CURLOPT_USERAGENT => 'Mozilla / 5.0 (Windows NT 10.0; Win64; x64)',// 模拟常用浏览器的useragent
             CURLOPT_RETURNTRANSFER => true,     // 获取的信息以文件流的形式返回，而不是直接输出
             CURLOPT_SSL_VERIFYPEER => false,    // https请求不验证证书
             CURLOPT_SSL_VERIFYHOST => false,    // https请求不验证hosts
@@ -215,6 +214,21 @@ class Finstall
     }
 
     /**
+     * 隐藏输入
+     * @return false|string
+     * @author fuyelk <fuyelk@fuyelk.com>
+     * @date 2024/5/31 9:47
+     */
+    private function hiddenInput()
+    {
+        $sttyModeRaw = shell_exec('stty -g');
+        shell_exec('stty -echo');
+        $value = fgets(STDIN, 4096);
+        shell_exec(sprintf('stty %s', $sttyModeRaw));
+        return $value;
+    }
+
+    /**
      * 登录
      * @return bool
      */
@@ -228,7 +242,12 @@ class Finstall
         $username = trim(fgets(STDIN));
 
         echo 'password:';
-        $password = trim(fgets(STDIN));
+        if ('\\' === DIRECTORY_SEPARATOR) {
+            $password = trim(fgets(STDIN));
+        } else {
+            $password = $this->hiddenInput();
+            echo "\n";
+        }
 
         $data = [
             'account' => $username,
@@ -255,14 +274,11 @@ class Finstall
         $api = self::$HOST . '/api/finstall/logout';
 
         try {
-            $res = self::apiRequest($api, 'GET', [], false);
+            self::apiRequest($api, 'GET', [], false);
         } catch (InstallException $e) {
             dump($e->getMessage());
             exit();
         }
-
-        echo "登出结果";
-        var_dump($res);
 
         dump('退出成功');
         exit();
