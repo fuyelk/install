@@ -9,6 +9,8 @@
 
 namespace fuyelk\install;
 
+use Exception;
+
 require_once 'InstallException.php';
 
 function dump($content = '', $new_line = true)
@@ -221,10 +223,14 @@ class Finstall
      */
     private function hiddenInput()
     {
-        $sttyModeRaw = shell_exec('stty -g');
-        shell_exec('stty -echo');
-        $value = fgets(STDIN, 4096);
-        shell_exec(sprintf('stty %s', $sttyModeRaw));
+        try {
+            $sttyModeRaw = shell_exec('stty -g');
+            shell_exec('stty -echo');
+            $value = fgets(STDIN, 4096);
+            shell_exec(sprintf('stty %s', $sttyModeRaw));
+        } catch (Exception $e) {
+            $value = trim(fgets(STDIN));
+        }
         return $value;
     }
 
