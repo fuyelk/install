@@ -246,7 +246,7 @@ class Install
             $removeBaseDirLen = mb_strlen($path);
         }
         if (is_dir($path) && ($handle = opendir($path))) {
-            if (DIRECTORY_SEPARATOR !== $path{-1}) {
+            if (DIRECTORY_SEPARATOR !== $path[strlen($path) - 1]) {
                 $path .= DIRECTORY_SEPARATOR;
             }
             while (false !== ($file = readdir($handle))) {
