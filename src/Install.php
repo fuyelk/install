@@ -360,15 +360,12 @@ class Install
             if (!self::$dbConfig) {
                 self::throwAndRollback('请先配置数据库');
             }
-            Db::startTrans();
             try {
                 $prefix = Db::getConfig('prefix');
                 $installSql = file_get_contents(self::$tempPackageDir . '/install.sql');
                 $installSql = str_replace('`prefix_', '`' . ($prefix ?: ''), $installSql);
                 Db::query($installSql);
-                Db::commit();
             } catch (Exception $e) {
-                Db::rollback();
                 self::throwAndRollback('执行Sql脚本出错：' . $e->getMessage());
             }
         }
